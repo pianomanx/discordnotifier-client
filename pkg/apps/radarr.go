@@ -63,8 +63,8 @@ func (a *Apps) radarrHandlers() {
 type RadarrConfig struct {
 	ExtraConfig
 	*starr.Config
-	*radarr.Radarr `toml:"-" xml:"-" json:"-"`
-	errorf         func(string, ...interface{}) `toml:"-" xml:"-" json:"-"`
+	*radarr.Radarr `json:"-" toml:"-" xml:"-"`
+	errorf         func(string, ...interface{}) `json:"-" toml:"-" xml:"-"`
 }
 
 func getRadarr(r *http.Request) *RadarrConfig {
@@ -980,7 +980,7 @@ func radarrAddImportList(req *http.Request) (int, interface{}) {
 		return apiError(http.StatusBadRequest, "decoding payload", err)
 	}
 
-	output, err := getRadarr(req).CreateImportListContext(req.Context(), &ilist)
+	output, err := getRadarr(req).AddImportListContext(req.Context(), &ilist)
 	if err != nil {
 		return apiError(http.StatusInternalServerError, "creating import list", err)
 	}

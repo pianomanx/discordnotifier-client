@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/CAFxX/httpcompression"
 	"github.com/Notifiarr/notifiarr/pkg/bindata"
 	"github.com/Notifiarr/notifiarr/pkg/mnd"
 	"github.com/gorilla/mux"
@@ -20,22 +21,28 @@ import (
 // httpHandlers initializes GUI HTTP routes.
 func (c *Client) httpHandlers() {
 	c.httpAPIHandlers() // Init API handlers up front.
+
+	compress, _ := httpcompression.DefaultAdapter()
+	gzip := func(handler http.HandlerFunc) http.Handler {
+		return compress(handler)
+	}
+
 	// 404 (or redirect to base path) everything else
 	defer func() {
-		c.Config.Router.PathPrefix("/").HandlerFunc(c.notFound)
+		c.Config.Router.PathPrefix("/").Handler(gzip(c.notFound))
 	}()
 
 	base := path.Join("/", c.Config.URLBase)
 
-	c.Config.Router.HandleFunc("/favicon.ico", c.favIcon).Methods("GET")
-	c.Config.Router.HandleFunc(strings.TrimSuffix(base, "/")+"/", c.slash).Methods("GET")
-	c.Config.Router.HandleFunc(strings.TrimSuffix(base, "/")+"/", c.loginHandler).Methods("POST")
+	c.Config.Router.Handle("/favicon.ico", gzip(c.favIcon)).Methods("GET")
+	c.Config.Router.Handle(strings.TrimSuffix(base, "/")+"/", gzip(c.slash)).Methods("GET")
+	c.Config.Router.Handle(strings.TrimSuffix(base, "/")+"/", gzip(c.loginHandler)).Methods("POST")
 
 	// Handle the same URLs as above on the different base URL too.
 	if !strings.EqualFold(base, "/") {
-		c.Config.Router.HandleFunc(path.Join(base, "favicon.ico"), c.favIcon).Methods("GET")
-		c.Config.Router.HandleFunc(base, c.slash).Methods("GET")
-		c.Config.Router.HandleFunc(base, c.loginHandler).Methods("POST")
+		c.Config.Router.Handle(path.Join(base, "favicon.ico"), gzip(c.favIcon)).Methods("GET")
+		c.Config.Router.Handle(base, gzip(c.slash)).Methods("GET")
+		c.Config.Router.Handle(base, gzip(c.loginHandler)).Methods("POST")
 	}
 
 	if c.Config.UIPassword == "" {
@@ -44,14 +51,15 @@ func (c *Client) httpHandlers() {
 
 	c.Config.Router.PathPrefix(path.Join(base, "/files/")).
 		Handler(http.StripPrefix(strings.TrimSuffix(base, "/"), http.HandlerFunc(c.handleStaticAssets))).Methods("GET")
-	c.Config.Router.HandleFunc(path.Join(base, "/logout"), c.logoutHandler).Methods("GET", "POST")
-	c.httpGuiHandlers(base)
+	c.Config.Router.Handle(path.Join(base, "/logout"), gzip(c.logoutHandler)).Methods("GET", "POST")
+	c.httpGuiHandlers(base, compress)
 }
 
-func (c *Client) httpGuiHandlers(base string) {
+func (c *Client) httpGuiHandlers(base string, compress func(handler http.Handler) http.Handler) {
 	// gui is used for authorized paths. All these paths have a prefix of /ui.
 	gui := c.Config.Router.PathPrefix(path.Join(base, "/ui")).Subrouter()
 	gui.Use(c.checkAuthorized) // check password or x-webauth-user header.
+	gui.Use(compress)
 	gui.Handle("/debug/vars", expvar.Handler()).Methods("GET")
 	gui.HandleFunc("/deleteFile/{source}/{id}", c.getFileDeleteHandler).Methods("GET")
 	gui.HandleFunc("/downloadFile/{source}/{id}", c.getFileDownloadHandler).Methods("GET")
@@ -92,11 +100,12 @@ func (c *Client) httpGuiHandlers(base string) {
 
 // httpAPIHandlers initializes API routes.
 func (c *Client) httpAPIHandlers() {
-	c.Config.HandleAPIpath("", "info", c.clientinfo.InfoHandler, "GET", "HEAD")
-	c.Config.HandleAPIpath("", "version", c.clientinfo.VersionHandler, "GET", "HEAD")
-	c.Config.HandleAPIpath("", "version/{app}/{instance:[0-9]+}", c.clientinfo.VersionHandlerInstance, "GET", "HEAD")
+	c.Config.HandleAPIpath("", "info", c.triggers.CI.InfoHandler, "GET", "HEAD")
+	c.Config.HandleAPIpath("", "version", c.triggers.CI.VersionHandler, "GET", "HEAD")
+	c.Config.HandleAPIpath("", "version/{app}/{instance:[0-9]+}", c.triggers.CI.VersionHandlerInstance, "GET", "HEAD")
 	c.Config.HandleAPIpath("", "trigger/{trigger:[0-9a-z-]+}", c.triggers.APIHandler, "GET", "POST")
 	c.Config.HandleAPIpath("", "trigger/{trigger:[0-9a-z-]+}/{content}", c.triggers.APIHandler, "GET", "POST")
+	c.Config.HandleAPIpath("", "services/{action}", c.Config.Services.APIHandler, "GET")
 	c.Config.HandleAPIpath("", "triggers", c.triggers.HandleGetTriggers, "GET")
 	c.Config.HandleAPIpath("", "ping", c.handleInstancePing, "GET")
 	c.Config.HandleAPIpath("", "ping/{app:[a-z,]+}", c.handleInstancePing, "GET")
@@ -151,7 +160,7 @@ func (c *Client) slash(response http.ResponseWriter, request *http.Request) {
 }
 
 func (c *Client) favIcon(w http.ResponseWriter, r *http.Request) { //nolint:varnamelen
-	ico, err := bindata.Asset("files/images/favicon.ico")
+	ico, err := bindata.Files.ReadFile("files/images/favicon.ico")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -218,7 +227,7 @@ func (c *Client) countRequest(next http.Handler) http.Handler {
 // under specific circumstances.
 func (c *Client) fixForwardedFor(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //nolint:varnamelen
-		if x := r.Header.Get("X-Forwarded-For"); x == "" || !c.Config.Allow.Contains(r.RemoteAddr) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff == "" || !c.Config.Allow.Contains(r.RemoteAddr) {
 			if end := strings.LastIndex(r.RemoteAddr, ":"); end != -1 {
 				r.Header.Set("X-Forwarded-For", strings.Trim(r.RemoteAddr[:end], "[]"))
 			} else if ra := strings.Trim(r.RemoteAddr, "[]"); ra != "" {
@@ -226,8 +235,8 @@ func (c *Client) fixForwardedFor(next http.Handler) http.Handler {
 			} else {
 				r.Header.Set("X-Forwarded-For", "unknown")
 			}
-		} else if l := strings.LastIndexAny(x, ", "); l != -1 {
-			r.Header.Set("X-Forwarded-For", strings.Trim(x[l:len(x)-1], ", "))
+		} else if l := strings.LastIndexAny(xff, ", "); l != -1 {
+			r.Header.Set("X-Forwarded-For", strings.Trim(xff[l:len(xff)-1], ", "))
 		}
 
 		next.ServeHTTP(w, r)

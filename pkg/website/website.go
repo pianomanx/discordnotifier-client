@@ -24,7 +24,7 @@ type httpClient struct {
 	*http.Client
 }
 
-func (s *Server) validAPIKey() error {
+func (s *Server) ValidAPIKey() error {
 	if len(s.Config.Apps.APIKey) != APIKeyLength {
 		return fmt.Errorf("%w: length must be %d characters", ErrInvalidAPIKey, APIKeyLength)
 	}
@@ -54,8 +54,7 @@ func unmarshalResponse(url string, code int, body io.ReadCloser) (*Response, err
 				ErrNon200, url, code, http.StatusText(code), err, buf.String()) //nolint:errorlint
 		}
 
-		return &resp, fmt.Errorf("%w: %s: %d %s",
-			ErrNon200, url, code, http.StatusText(code))
+		return &resp, fmt.Errorf("%w: %s: %d %s", ErrNon200, url, code, http.StatusText(code))
 	}
 
 	if err != nil {
@@ -156,21 +155,21 @@ func (s *Server) sendFile(ctx context.Context, uri string, file *UploadFile) (*R
 func (s *Server) createFileUpload(file *UploadFile) (*bytes.Buffer, string, error) {
 	// Create a new multipart writer with the buffer
 	var buf bytes.Buffer
-	w := multipart.NewWriter(&buf)
+	writer := multipart.NewWriter(&buf)
 
-	if hi := s.hostInfoNoError(); hi != nil {
+	if host := s.hostInfoNoError(); host != nil {
 		// Since we can't send the normal hostInfo json payload,
 		// we have to shove some things into the form fields.
-		if err := w.WriteField("hostname", hi.Hostname); err != nil {
+		if err := writer.WriteField("hostname", host.Hostname); err != nil {
 			return nil, "", fmt.Errorf("adding variable to form buffer: %w", err)
 		}
 
-		_ = w.WriteField("hostId", hi.HostID)
-		_ = w.WriteField("os", hi.OS)
+		_ = writer.WriteField("hostId", host.HostID)
+		_ = writer.WriteField("os", host.OS)
 	}
 
 	// Create a new form field
-	fw, err := w.CreateFormFile("file", file.FileName+".gz")
+	fw, err := writer.CreateFormFile("file", file.FileName+".gz")
 	if err != nil {
 		return nil, "", fmt.Errorf("creating form buffer: %w", err)
 	}
@@ -185,10 +184,10 @@ func (s *Server) createFileUpload(file *UploadFile) (*bytes.Buffer, string, erro
 
 	// Close the compressor and multipart writer to finalize the request.
 	compress.Close()
-	w.Close()
+	writer.Close()
 	file.Close() // Close the file too.
 
-	return &buf, w.FormDataContentType(), nil
+	return &buf, writer.FormDataContentType(), nil
 }
 
 // Do performs an http Request with retries and logging!
@@ -326,7 +325,7 @@ func (s *Server) watchSendDataChan(ctx context.Context) {
 }
 
 func (s *Server) sendRequest(ctx context.Context, data *Request) (*Response, time.Duration, error) {
-	if err := s.validAPIKey(); err != nil {
+	if err := s.ValidAPIKey(); err != nil {
 		if data.respChan != nil {
 			data.respChan <- &chResponse{
 				Response: nil,

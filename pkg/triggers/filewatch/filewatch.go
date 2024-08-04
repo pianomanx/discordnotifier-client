@@ -1,6 +1,8 @@
 package filewatch
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -18,8 +20,8 @@ import (
 )
 
 var (
-	ErrInvalidRegexp = fmt.Errorf("invalid regexp")
-	ErrIgnoredLog    = fmt.Errorf("the requested path is internally ignored")
+	ErrInvalidRegexp = errors.New("invalid regexp")
+	ErrIgnoredLog    = errors.New("the requested path is internally ignored")
 )
 
 const (
@@ -49,13 +51,13 @@ type Action struct {
 
 // WatchFile is the input data needed to watch files.
 type WatchFile struct {
-	Path      string `json:"path" toml:"path" xml:"path" yaml:"path"`
-	Regexp    string `json:"regex" toml:"regex" xml:"regex" yaml:"regex"`
-	Skip      string `json:"skip" toml:"skip" xml:"skip" yaml:"skip"`
-	Poll      bool   `json:"poll" toml:"poll" xml:"poll" yaml:"poll"`
-	Pipe      bool   `json:"pipe" toml:"pipe" xml:"pipe" yaml:"pipe"`
+	Path      string `json:"path"      toml:"path"       xml:"path"       yaml:"path"`
+	Regexp    string `json:"regex"     toml:"regex"      xml:"regex"      yaml:"regex"`
+	Skip      string `json:"skip"      toml:"skip"       xml:"skip"       yaml:"skip"`
+	Poll      bool   `json:"poll"      toml:"poll"       xml:"poll"       yaml:"poll"`
+	Pipe      bool   `json:"pipe"      toml:"pipe"       xml:"pipe"       yaml:"pipe"`
 	MustExist bool   `json:"mustExist" toml:"must_exist" xml:"must_exist" yaml:"mustExist"`
-	LogMatch  bool   `json:"logMatch" toml:"log_match" xml:"log_match" yaml:"logMatch"`
+	LogMatch  bool   `json:"logMatch"  toml:"log_match"  xml:"log_match"  yaml:"logMatch"`
 	re        *regexp.Regexp
 	skip      *regexp.Regexp
 	tail      *tail.Tail
@@ -118,8 +120,11 @@ func checkIgnored(ignored []string) ignored {
 	return output
 }
 
+// Verify the interfaces are satisfied.
+var _ = common.Run(&Action{nil})
+
 // Run compiles any regexp's and opens a tail -f on provided watch files.
-func (a *Action) Run() {
+func (a *Action) Run(_ context.Context) {
 	a.cmd.run()
 }
 
@@ -146,10 +151,12 @@ func (c *cmd) run() {
 		validTails = append(validTails, item)
 	}
 
-	if len(validTails) != 0 {
-		cases, ticker := c.collectFileTails(validTails)
-		go c.tailFiles(cases, validTails, ticker)
+	if len(validTails) == 0 {
+		return
 	}
+
+	cases, ticker := c.collectFileTails(validTails)
+	c.tailFiles(cases, validTails, ticker)
 }
 
 func (w *WatchFile) setup(logger *logger, ignored ignored) error {

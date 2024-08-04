@@ -24,7 +24,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+        with:
+          # we need the whole thing so we can count commits.
+          fetch-depth: '0'
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
@@ -44,9 +46,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set docker build-args
+        env:
+          SLIPPERS: ${{ secrets.SLIPPERS }}
         run: >-
           git fetch --force --tags;
           source ./settings.sh;
+          [ -z SLIPPERS ] || eval "${SLIPPERS}";
+          gzip -9 pkg/bindata/files/{css,js}/*;
+          gzip -9r pkg/bindata/templates/*;
           for item in DATE COMMIT VERSION ITERATION BRANCH LICENSE DESC VENDOR MAINT SOURCE_URL; do
             eval echo "settings.sh build-arg: ${item}=\$${item}";
             eval echo "${item}=\$${item}" >> $GITHUB_ENV;
@@ -71,7 +78,7 @@ jobs:
 
       # Build and push Docker image with Buildx
       # https://github.com/docker/build-push-action
-      - name: Build and push ${{ matrix.docker.name }} Docker image
+      - name: Build v${{ env.VERSION }}-${{ env.ITERATION }} and push ${{ matrix.docker.name }} Docker image
         uses: docker/build-push-action@v6
         with:
           platforms: |-

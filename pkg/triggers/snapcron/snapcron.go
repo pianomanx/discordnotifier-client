@@ -57,7 +57,7 @@ func (c *cmd) create() {
 }
 
 func (c *cmd) printLog() {
-	var ex string
+	var enabled string
 
 	for key, val := range map[string]bool{
 		"cpu, load, memory, uptime, users, temps": true,
@@ -69,7 +69,7 @@ func (c *cmd) printLog() {
 		"ipmiSudo": c.Snapshot.IPMI && c.Snapshot.IPMISudo,
 		"iotop":    c.Snapshot.IOTop > 0,
 		"pstop":    c.Snapshot.PSTop > 0,
-		"mysql":    c.Snapshot.Plugins != nil && len(c.Snapshot.MySQL) > 0,
+		"mysql":    len(c.Snapshot.MySQL) > 0,
 		"zfs":      len(c.Snapshot.ZFSPools) > 0,
 		"sudo":     c.Snapshot.UseSudo && c.Snapshot.DriveData,
 	} {
@@ -77,20 +77,20 @@ func (c *cmd) printLog() {
 			continue
 		}
 
-		if ex != "" {
-			ex += ", "
+		if enabled != "" {
+			enabled += ", "
 		}
 
-		ex += key
+		enabled += key
 	}
 
 	if c.Snapshot.Interval.Duration == 0 {
-		c.Printf("==> System Snapshot Collection Disabled, timeout: %v, configured: %s", c.Snapshot.Timeout, ex)
+		c.Printf("==> System Snapshot Collection Disabled, timeout: %v, configured: %s", c.Snapshot.Timeout, enabled)
 		return
 	}
 
 	c.Printf("==> System Snapshot Collection Started, interval: %v, timeout: %v, enabled: %s",
-		c.Snapshot.Interval, c.Snapshot.Timeout, ex)
+		c.Snapshot.Interval, c.Snapshot.Timeout, enabled)
 }
 
 func (c *cmd) sendSnapshot(ctx context.Context, input *common.ActionInput) {

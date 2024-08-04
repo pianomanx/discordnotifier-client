@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"time"
 
 	"github.com/Notifiarr/notifiarr/pkg/mnd"
 	"github.com/gorilla/mux"
@@ -42,7 +41,7 @@ func (c *Client) StartWebServer(ctx context.Context) {
 	c.server = &http.Server{ //nolint: exhaustivestruct
 		Handler:           smx,
 		Addr:              c.Config.BindAddr,
-		IdleTimeout:       time.Minute,
+		IdleTimeout:       mnd.DefaultTimeout,
 		WriteTimeout:      c.Config.Timeout.Duration,
 		ReadTimeout:       c.Config.Timeout.Duration,
 		ReadHeaderTimeout: c.Config.Timeout.Duration,
@@ -65,6 +64,7 @@ func (c *Client) runWebServer() {
 	var err error
 
 	if menu["stat"] != nil {
+		menu["stat"].Enable()
 		menu["stat"].Check()
 		menu["stat"].SetTooltip("web server running, uncheck to pause")
 	}
@@ -83,6 +83,13 @@ func (c *Client) runWebServer() {
 
 // StopWebServer stops the web servers. Panics if that causes an error or timeout.
 func (c *Client) StopWebServer(ctx context.Context) error {
+	c.Lock()
+	defer c.Unlock()
+
+	if c.server == nil {
+		return nil
+	}
+
 	c.Print("==> Stopping Web Server!")
 
 	ctx, cancel := context.WithTimeout(ctx, c.Config.Timeout.Duration)

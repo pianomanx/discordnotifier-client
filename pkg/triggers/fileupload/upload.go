@@ -2,6 +2,7 @@ package fileupload
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +13,7 @@ import (
 
 const TrigUploadFile common.TriggerName = "File Upload"
 
-var ErrInvalidFile = fmt.Errorf("invalid file provided")
+var ErrInvalidFile = errors.New("invalid file provided")
 
 // Action contains the exported methods for this package.
 type Action struct {
@@ -86,7 +87,7 @@ func (c *cmd) uploadFile(_ context.Context, event website.EventType, fileName st
 	c.SendData(&website.Request{
 		Route:  website.UploadRoute,
 		Event:  event,
-		LogMsg: fmt.Sprintf("Upload file %s", fileName),
+		LogMsg: "Upload file " + fileName,
 		UploadFile: &website.UploadFile{
 			FileName:   filepath.Base(fileName),
 			ReadCloser: file,

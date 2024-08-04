@@ -6,12 +6,14 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Notifiarr/notifiarr/pkg/logs"
 	"github.com/Notifiarr/notifiarr/pkg/mnd"
 	"github.com/Notifiarr/notifiarr/pkg/website"
+	"github.com/gorilla/mux"
 )
 
 func (c *Config) Setup(services []*Service) error {
@@ -53,9 +55,18 @@ func (c *Config) setup(services []*Service) error {
 	return nil
 }
 
+func (c *Config) SetWebsite(website *website.Server) {
+	c.website = website
+}
+
 // Start begins the service check routines.
 // Runs Parallel checkers and the check reporter.
 func (c *Config) Start(ctx context.Context) {
+	if len(c.services) == 0 {
+		c.Printf("==> Service Checker Disabled! No services to check.")
+		return
+	}
+
 	c.stopLock.Lock()
 	defer c.stopLock.Unlock()
 
@@ -135,7 +146,7 @@ func (c *Config) loadServiceStates(ctx context.Context) {
 		return
 	}
 
-	values, err := c.Website.GetState(ctx, names...)
+	values, err := c.website.GetState(ctx, names...)
 	if err != nil {
 		c.ErrorfNoShare("Getting initial service states from website: %v", err)
 		return
@@ -259,4 +270,33 @@ func (c *Config) Stop() {
 // SvcCount returns the count of services being monitored.
 func (c *Config) SvcCount() int {
 	return len(c.services)
+}
+
+// APIHandler is passed into the webserver so services can be accessed by the API.
+func (c *Config) APIHandler(req *http.Request) (int, any) {
+	return c.handleTrigger(req, website.EventAPI)
+}
+
+func (c *Config) handleTrigger(req *http.Request, event website.EventType) (int, any) {
+	action := mux.Vars(req)["action"]
+	c.Debugf("[%s requested] Incoming Service Action: %s (%s)", event, action)
+
+	switch action {
+	case "list":
+		return c.returnServiceList()
+	default:
+		return http.StatusBadRequest, "unknown service action: " + action
+	}
+}
+
+// @Description  Returns a list of service check results.
+// @Summary      Get service check results
+// @Tags         Triggers
+// @Produce      json
+// @Success      200  {object} apps.Respond.apiResponse{message=[]CheckResult} "list check results"
+// @Failure      404  {object} string "bad token or api key"
+// @Router       /api/services/list [get]
+// @Security     ApiKeyAuth
+func (c *Config) returnServiceList() (int, any) {
+	return http.StatusOK, c.GetResults()
 }

@@ -6,6 +6,7 @@ go 1.22
 
 require (
 	github.com/BurntSushi/toml v1.4.0
+	github.com/CAFxX/httpcompression v0.0.9
 	github.com/akavel/rsrc v0.10.2
 	github.com/dsnet/compress v0.0.1
 	github.com/energye/systray v1.0.2
@@ -23,16 +24,16 @@ require (
 	github.com/hugelgupf/go-shlex v0.0.0-20200702092117-c80c9d0918fa
 	github.com/jackpal/gateway v1.0.15
 	github.com/jaypipes/ghw v0.12.0
-	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
-	github.com/kevinburke/go-bindata/v4 v4.0.2
+	github.com/jxeng/shortcut v1.0.2
 	github.com/lestrrat-go/apache-logformat/v2 v2.0.6
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mrobinsn/go-rtorrent v1.8.0
 	github.com/nxadm/tail v1.4.11
-	github.com/shirou/gopsutil/v4 v4.24.6
+	github.com/shirou/gopsutil/v4 v4.24.7
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
 	github.com/stretchr/testify v1.9.0
 	github.com/swaggo/swag v1.16.3
+	github.com/vearutop/statigz v1.4.0
 	golang.org/x/crypto v0.25.0
 	golang.org/x/mod v0.19.0
 	golang.org/x/sys v0.22.0
@@ -40,17 +41,17 @@ require (
 	golang.org/x/time v0.5.0
 	golift.io/cache v0.0.2
 	golift.io/cnfg v0.2.3
-	golift.io/cnfgfile v0.0.0-20240704165116-48378d0c6c38
+	golift.io/cnfgfile v0.0.0-20240713024420-a5436d84eb48
 	golift.io/datacounter v1.0.4
 	golift.io/deluge v0.10.1
 	golift.io/mulery v0.0.8
 	golift.io/nzbget v0.1.5
-	golift.io/qbit v0.0.0-20240407164833-5de994cfd55e
-	golift.io/rotatorr v0.0.0-20230911015553-cd2abbd726c7
-	golift.io/starr v1.0.1-0.20240315164714-247399771c46
+	golift.io/qbit v0.0.0-20240715191156-11930ac2546e
+	golift.io/rotatorr v0.0.0-20240723172740-cb73b9c4894c
+	golift.io/starr v1.0.1-0.20240717055349-aa3e015cc8a4
 	golift.io/version v0.0.2
 	golift.io/xtractr v0.2.2
-	modernc.org/sqlite v1.30.1
+	modernc.org/sqlite v1.31.1
 )
 
 require (
@@ -112,7 +113,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v1.0.1 // indirect
 	modernc.org/gc/v3 v3.0.0-20240304020402-f0dba7c97c2b // indirect
-	modernc.org/libc v1.54.3 // indirect
+	modernc.org/libc v1.55.3 // indirect
 	modernc.org/mathutil v1.6.0 // indirect
 	modernc.org/memory v1.8.0 // indirect
 	modernc.org/strutil v1.2.0 // indirect

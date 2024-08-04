@@ -35,26 +35,31 @@ jobs:
           AC_USERNAME: ${{ secrets.AC_USERNAME }}
           AC_PASSWORD: ${{ secrets.AC_PASSWORD }}
           AC_PROVIDER: ${{ secrets.AC_PROVIDER }}
+          SLIPPERS: ${{ secrets.SLIPPERS }}
         id: release
         run: |
           brew install Bearer/tap/gon
+          [ -z SLIPPERS ] || eval "${SLIPPERS}"
+          gzip -9 pkg/bindata/files/{css,js}/*
+          gzip -9r pkg/bindata/templates/*
           make signdmg
-      - name: upload artifacts
+      - name: Upload DMG Artifact
         uses: actions/upload-artifact@v4
         with:
           name: dmg-release
           path: release
 
-  release-test:
+  release:
     # description: "Builds all the Notifiarr client binaries and packages for a release."
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/unstable' || github.ref == 'refs/heads/main'
     outputs:
-      version: ${{ steps.release.outputs.version }}
-      revision: ${{ steps.release.outputs.revision }}
+      version: ${{ steps.vars.outputs.version }}
+      revision: ${{ steps.vars.outputs.revision }}
     name: Make Release Assets
     runs-on: ubuntu-latest
     env:
       GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+      SLIPPERS: ${{ secrets.SLIPPERS }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,21 +68,42 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
-      - name: make-release
-        id: release
+      - name: Get Version and Iteration
+        id: vars
         run: |
-          sudo apt install -y rpm fakeroot zip debsigs gnupg jq 
-          sudo gem install --no-document fpm
-          echo "${GPG_SIGNING_KEY}" | gpg --import -
-          make release
           source settings.sh
+          echo "Building v${VERSION}-${ITERATION}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "revision=${ITERATION}" >> $GITHUB_OUTPUT
-      - name: upload artifacts
+      - name: Make Release v${{steps.vars.outputs.version}}-${{steps.vars.outputs.revision}}
+        id: release
+        run: |
+          sudo apt install -y rpm fakeroot zip debsigs gnupg jq libarchive-tools
+          sudo gem install --no-document fpm
+          echo "${GPG_SIGNING_KEY}" | gpg --import -
+          [ -z SLIPPERS ] || eval "${SLIPPERS}"
+          gzip -9 pkg/bindata/files/{css,js}/*
+          gzip -9r pkg/bindata/templates/*
+          make release
+      - name: Upload Release Artifacts v${{steps.vars.outputs.version}}-${{steps.vars.outputs.revision}}
         uses: actions/upload-artifact@v4
         with:
           name: release
           path: release
+      - name: upload sha512sums.txt
+        uses: actions/upload-artifact@v4
+        with:
+          name: sha512sums.txt
+          path: release/sha512sums.txt
+
+  print-built-version:
+    needs:
+      - release
+    name: Built v${{needs.release.outputs.version}}-${{needs.release.outputs.revision}}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Built v${{needs.release.outputs.version}}-${{needs.release.outputs.revision}}
+        run: echo Built v${{needs.release.outputs.version}}-${{needs.release.outputs.revision}}
 
   deploy-unstable-unstable:
     # description: "Uploads pre-built binaries to unstable.golift.io."
@@ -86,9 +112,9 @@ jobs:
       matrix:
         files: [release, dmg-release]
     needs:
-      - release-test
+      - release
       - macapp-test
-    name: Deploy Unstable.app
+    name: GoLift Unstable Deploy
     runs-on: ubuntu-latest
     steps:
       - name: "Download files: ${{ matrix.files }}"
@@ -101,15 +127,16 @@ jobs:
             [ -f "$file" ] || continue;
             echo "Uploading: ${file}";
             curl -sSH "X-API-KEY: ${{ secrets.UNSTABLE_UPLOAD_KEY }}" "https://unstable.golift.io/upload.php?folder=notifiarr" -F "file=@${file}";
-            echo '{"version":"${{needs.release-test.outputs.version}}","revision":${{needs.release-test.outputs.revision}},"size":'$(stat --printf="%s" ${file})'}' >> ${file}.txt
+            echo '{"version":"${{needs.release.outputs.version}}","revision":${{needs.release.outputs.revision}},"size":'$(stat --printf="%s" ${file})'}' >> ${file}.txt
             curl -sSH "X-API-KEY: ${{ secrets.UNSTABLE_UPLOAD_KEY }}" "https://unstable.golift.io/upload.php?folder=notifiarr" -F "file=@${file}.txt";
           done
 
   deploy-unstable-packagecloud:
     # description: "Uploads pre-built RPM and DEB packages to packagecloud.io/golift"
     if: github.ref == 'refs/heads/unstable'
-    needs: release-test
-    name: Deploy Unstable PackageCloud
+    needs:
+      - release
+    name: PackageCloud Unstable Deploy
     runs-on: ubuntu-latest
     steps:
       - name: Download release files
@@ -127,8 +154,9 @@ jobs:
   deploy-packagecloud:
     # description: "Uploads pre-built RPM and DEB packages to packagecloud.io/golift"
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: release-test
-    name: Deploy Release PackageCloud
+    needs:
+      - release
+    name: PackageCloud Release Deploy
     runs-on: ubuntu-latest
     steps:
       - name: Download release files
@@ -143,12 +171,14 @@ jobs:
           rpmdists: el/6
           debdists: ubuntu/focal
 
-  deploy-github-release:
+  deploy-github:
     # description: uploads all the built release assets to the GitHub Release.
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
-    needs: [release-test, macapp-test]
+    needs:
+      - release
+      - macapp-test
     strategy:
       matrix:
         files: [release, dmg-release]
@@ -170,31 +200,25 @@ jobs:
             *.dmg
             *.gz
             *.txt
+            *.zst
+            *.sig
 
   archlinux-aur:
-    # description: creates and uploads and aur file to the golift/aur repo for arch linux.
-    needs: deploy-github-release
+    if: startsWith(github.ref, 'refs/tags/v')
+    # description: creates and uploads a PKGBUILD file to the official aur repo from Arch Linux.
+    needs:
+      - release
     name: Deploy ArchLinux AUR
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: '0'
+      - name: Download ${{ matrix.files }} Files
+        uses: actions/download-artifact@v4
+        with:
+          name: sha512sums.txt
       - name: Deploy Aurch AUR
         run: bash init/archlinux/aur-deploy.sh
         env:
           DEPLOY_KEY: ${{ secrets.AUR_DEPLOY_KEY }}
-
-  homebrew-formula:
-    # description: creates and uploads a homebrew formula file to the golift/homebrew-mugs repo.
-    needs: deploy-github-release
-    name: Deploy Homebrew Formula
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: '0'
-      - name: Deploy Homebrew Formula
-        run: bash init/homebrew/formula-deploy.sh
-        env:
-          DEPLOY_KEY: ${{ secrets.HOMEBREW_DEPLOY_KEY }}
